@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#10b981">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>Streaks — Habit Tracker</title>
+<style>
+  :root{--bg:#0f1420; --card:#1a2233; --card2:#212b40; --text:#e8edf5; --muted:#7d8aa3;
+        --accent:#10b981; --accent2:#34d399; --red:#ef4444; --radius:14px;}
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  body{background:var(--bg); color:var(--text); font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+       max-width:520px; margin:0 auto; padding:16px 16px 90px; min-height:100vh;}
+  header{display:flex; justify-content:space-between; align-items:center; padding:8px 0 18px;}
+  h1{font-size:1.3rem;}
+  .date{color:var(--muted); font-size:.85rem;}
+  .habit{background:var(--card); border-radius:var(--radius); padding:14px 16px; margin-bottom:12px;}
+  .habit-top{display:flex; align-items:center; gap:12px;}
+  .check{width:46px; height:46px; border-radius:50%; border:2.5px solid var(--muted); background:none;
+         font-size:1.3rem; color:transparent; cursor:pointer; flex-shrink:0; transition:all .15s;}
+  .check.done{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .habit-info{flex:1; min-width:0;}
+  .habit-name{font-weight:600; font-size:1rem; word-wrap:break-word;}
+  .streak{color:var(--muted); font-size:.8rem; margin-top:2px;}
+  .streak b{color:var(--accent2);}
+  .menu-btn{background:none; border:none; color:var(--muted); font-size:1.2rem; padding:8px; cursor:pointer;}
+  .grid{display:flex; gap:4px; margin-top:12px;}
+  .cell{flex:1; aspect-ratio:1; border-radius:4px; background:var(--card2); max-width:26px;}
+  .cell.on{background:var(--accent);}
+  .cell.today-cell{outline:1.5px solid var(--accent2);}
+  .grid-labels{display:flex; gap:4px; margin-top:3px;}
+  .grid-labels span{flex:1; max-width:26px; text-align:center; font-size:.6rem; color:var(--muted);}
+  .fab{position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--accent);
+       color:#fff; border:none; border-radius:28px; padding:14px 28px; font-size:1rem; font-weight:600;
+       cursor:pointer; box-shadow:0 4px 16px rgba(16,185,129,.4);}
+  .empty{text-align:center; color:var(--muted); padding:60px 20px; line-height:1.6;}
+  .empty .big{font-size:2.5rem; margin-bottom:12px;}
+  dialog{background:var(--card); color:var(--text); border:none; border-radius:var(--radius);
+         padding:22px; width:min(90vw,380px); margin:auto;}
+  dialog::backdrop{background:rgba(0,0,0,.6);}
+  dialog h2{font-size:1.05rem; margin-bottom:14px;}
+  dialog input{width:100%; background:var(--bg); border:1px solid var(--card2); border-radius:8px;
+         color:var(--text); padding:12px; font-size:1rem; margin-bottom:14px;}
+  dialog input:focus{outline:none; border-color:var(--accent);}
+  .dlg-row{display:flex; gap:10px; justify-content:flex-end;}
+  .btn{border:none; border-radius:8px; padding:10px 18px; font-size:.9rem; cursor:pointer;}
+  .btn-primary{background:var(--accent); color:#fff; font-weight:600;}
+  .btn-ghost{background:var(--card2); color:var(--text);}
+  .btn-danger{background:var(--red); color:#fff; margin-right:auto;}
+  .stats{display:flex; gap:10px; margin-bottom:16px;}
+  .stat{flex:1; background:var(--card); border-radius:var(--radius); padding:12px; text-align:center;}
+  .stat .v{font-size:1.4rem; font-weight:700; color:var(--accent2);}
+  .stat .l{font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:2px;}
+  .export-link{display:block; text-align:center; color:var(--muted); font-size:.75rem; margin-top:20px;
+         background:none; border:none; width:100%; cursor:pointer; text-decoration:underline;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Streaks</h1>
+  <span class="date" id="todayLabel"></span>
+</header>
+
+<div class="stats">
+  <div class="stat"><div class="v" id="statDone">0/0</div><div class="l">Done today</div></div>
+  <div class="stat"><div class="v" id="statBest">0</div><div class="l">Best streak</div></div>
+  <div class="stat"><div class="v" id="statTotal">0</div><div class="l">Total ticks</div></div>
+</div>
+
+<div id="list"></div>
+
+<button class="fab" onclick="openAdd()">＋ New habit</button>
+
+<dialog id="dlg">
+  <h2 id="dlgTitle">New habit</h2>
+  <input id="dlgName" placeholder="e.g. Drink water, Read 10 pages" maxlength="60">
+  <div class="dlg-row">
+    <button class="btn btn-danger" id="dlgDelete" style="display:none;" onclick="deleteHabit()">Delete</button>
+    <button class="btn btn-ghost" onclick="dlg.close()">Cancel</button>
+    <button class="btn btn-primary" onclick="saveHabit()">Save</button>
+  </div>
+</dialog>
+
+<button class="export-link" onclick="exportData()">Export my data</button>
+
+<script>
+"use strict";
+const KEY = "streaks_data_v1";
+let habits = [];  // {id, name, days:{ "2026-07-06": true }}
+let editingId = null;
+const dlg = document.getElementById("dlg");
+
+function localISO(d){
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+  return x.toISOString().slice(0,10);
+}
+const today = () => localISO(new Date());
+
+function loadData(){ try{ habits = JSON.parse(localStorage.getItem(KEY)) || []; }catch{ habits = []; } }
+function saveData(){ localStorage.setItem(KEY, JSON.stringify(habits)); }
+
+function lastNDays(n){
+  const out = [];
+  const now = new Date();
+  for (let i=n-1;i>=0;i--){
+    const d = new Date(now); d.setDate(now.getDate()-i);
+    out.push(localISO(d));
+  }
+  return out;
+}
+
+function streakOf(h){
+  let s = 0;
+  const now = new Date();
+  let start = 0;
+  if (!h.days[today()]) start = 1;   // streak survives until end of today
+  for (let i=start;;i++){
+    const d = new Date(now); d.setDate(now.getDate()-i);
+    if (h.days[localISO(d)]) s++;
+    else break;
+  }
+  return s;
+}
+function bestStreakOf(h){
+  const ds = Object.keys(h.days).filter(k=>h.days[k]).sort();
+  let best = 0, cur = 0, prev = null;
+  for (const d of ds){
+    if (prev){
+      const diff = Math.round((new Date(d) - new Date(prev)) / 86400000);
+      cur = diff === 1 ? cur+1 : 1;
+    } else cur = 1;
+    best = Math.max(best, cur);
+    prev = d;
+  }
+  return best;
+}
+
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function render(){
+  const t = today();
+  document.getElementById("todayLabel").textContent =
+    new Date().toLocaleDateString("en-GB",{weekday:"long", day:"numeric", month:"long"});
+  const list = document.getElementById("list");
+  if (!habits.length){
+    list.innerHTML = `<div class="empty"><div class="big">🌱</div>No habits yet.<br>Add your first one below. Small and specific works best.</div>`;
+  } else {
+    const days = lastNDays(14);
+    const dayLetters = days.map(d => "SMTWTFS"[new Date(d+"T12:00:00").getDay()]);
+    list.innerHTML = habits.map(h => {
+      const done = !!h.days[t];
+      const s = streakOf(h);
+      return `<div class="habit">
+        <div class="habit-top">
+          <button class="check ${done?"done":""}" onclick="toggle('${h.id}')" aria-label="Mark done">✓</button>
+          <div class="habit-info">
+            <div class="habit-name">${esc(h.name)}</div>
+            <div class="streak">${s > 0 ? `🔥 <b>${s} day${s===1?"":"s"}</b> streak` : "No streak yet. Today's the day."}</div>
+          </div>
+          <button class="menu-btn" onclick="openEdit('${h.id}')" aria-label="Edit">⋯</button>
+        </div>
+        <div class="grid">${days.map(d=>`<div class="cell ${h.days[d]?"on":""} ${d===t?"today-cell":""}"></div>`).join("")}</div>
+        <div class="grid-labels">${dayLetters.map(l=>`<span>${l}</span>`).join("")}</div>
+      </div>`;
+    }).join("");
+  }
+  const doneCount = habits.filter(h=>h.days[t]).length;
+  document.getElementById("statDone").textContent = `${doneCount}/${habits.length}`;
+  document.getElementById("statBest").textContent = habits.length ? Math.max(...habits.map(bestStreakOf)) : 0;
+  document.getElementById("statTotal").textContent = habits.reduce((a,h)=>a+Object.values(h.days).filter(Boolean).length,0);
+}
+
+function toggle(id){
+  const h = habits.find(x=>x.id===id); if (!h) return;
+  const t = today();
+  if (h.days[t]) delete h.days[t]; else h.days[t] = true;
+  saveData(); render();
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function openAdd(){
+  editingId = null;
+  document.getElementById("dlgTitle").textContent = "New habit";
+  document.getElementById("dlgName").value = "";
+  document.getElementById("dlgDelete").style.display = "none";
+  dlg.showModal();
+  document.getElementById("dlgName").focus();
+}
+function openEdit(id){
+  const h = habits.find(x=>x.id===id); if (!h) return;
+  editingId = id;
+  document.getElementById("dlgTitle").textContent = "Edit habit";
+  document.getElementById("dlgName").value = h.name;
+  document.getElementById("dlgDelete").style.display = "block";
+  dlg.showModal();
+}
+function saveHabit(){
+  const name = document.getElementById("dlgName").value.trim();
+  if (!name) return;
+  if (editingId){
+    const h = habits.find(x=>x.id===editingId);
+    if (h) h.name = name;
+  } else {
+    habits.push({ id: "h"+Date.now(), name, days:{} });
+  }
+  saveData(); render(); dlg.close();
+}
+function deleteHabit(){
+  if (!editingId) return;
+  if (!confirm("Delete this habit and its history?")) return;
+  habits = habits.filter(h=>h.id!==editingId);
+  saveData(); render(); dlg.close();
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(habits,null,2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "streaks-export.json";
+  a.click();
+}
+
+loadData(); render();
+setInterval(render, 60000); // midnight rollover
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
