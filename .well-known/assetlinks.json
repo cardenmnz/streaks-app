@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.cardenmnz.streaks",
+        "sha256_cert_fingerprints": ["93:22:D8:99:C4:E2:60:15:FA:53:CA:F3:E9:62:A1:AC:3B:4D:2A:B5:49:70:9A:EE:24:23:D4:A6:F3:BF:8C:45"]
+      }
+    }]
